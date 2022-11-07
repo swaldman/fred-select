@@ -10,7 +10,9 @@ lazy val root = project
     scalaVersion        := ScalaVersion,
     libraryDependencies += "com.softwaremill.sttp.client3" %% "zio"               % SttpVersion,
     libraryDependencies += "com.softwaremill.sttp.client3" %% "zio-json"          % SttpVersion,
-    libraryDependencies += "com.mysql"                      % "mysql-connector-j" % "8.0.31",     
+    libraryDependencies += "com.mchange"                   %% "sqlutil-scala3"    % "0.0.1-SNAPSHOT",     
+    libraryDependencies += "com.mysql"                      % "mysql-connector-j" % "8.0.31",
     // libraryDependencies += "dev.zio" %% "zio-json" % "0.3.0",
-    resolvers += Resolver.mavenLocal
+    resolvers += Resolver.mavenLocal,
+    fork := true
   )

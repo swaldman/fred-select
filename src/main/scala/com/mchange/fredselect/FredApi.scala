@@ -52,16 +52,24 @@ object FredApi:
   implicit val SeriesObservationsDecoder : JsonDecoder[SeriesObservations] = DeriveJsonDecoder.gen[SeriesObservations]
 
   // don't blame me for the seriess thing, it is straight out of the Fred API
-  def seriesMetadataFetch( series : String, apiKey : String ) : ZIO[Any, Throwable, Response[Either[ResponseException[String, String], FredApi.SeriessMetadata]]] = 
+  def seriesMetadataFetch( series : String, apiKey : String ) : ZIO[Any, Throwable, FredApi.SeriesMetadata] = 
     HttpClientZioBackend().flatMap { backend =>
       val request = basicRequest.get(uri"https://api.stlouisfed.org/fred/series?series_id=${series}A&api_key=${apiKey}&file_type=json")
-      request.response(asJson[SeriessMetadata]).send(backend)
+      for {
+        response        <- request.response(asJson[SeriessMetadata]).send(backend)
+        seriessMetadata <- ZIO.fromEither(response.body)
+      }
+      yield seriessMetadata.seriess.head
     }
 
-  def seriesObservationsFetch( series : String, apiKey : String ) : ZIO[Any, Throwable, Response[Either[ResponseException[String, String], FredApi.SeriesObservations]]] = 
+  def seriesObservationsFetch( series : String, apiKey : String ) : ZIO[Any, Throwable, FredApi.SeriesObservations] = 
     HttpClientZioBackend().flatMap { backend =>
       val request = basicRequest.get(uri"https://api.stlouisfed.org/fred/series/observations?series_id=${series}A&api_key=${apiKey}&file_type=json")
-      request.response(asJson[SeriesObservations]).send(backend)
+      for {
+        response           <- request.response(asJson[SeriesObservations]).send(backend)
+        seriesObservations <- ZIO.fromEither(response.body)
+      }
+      yield seriesObservations
     }
     
 
