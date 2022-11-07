@@ -13,23 +13,24 @@ import FredApi.*
 // see parameter definitions, https://fred.stlouisfed.org/docs/api/fred/series_observations.html
 object DoltSchema:
   object TableName:
-    val UnitsKey              = "units_key"
     val FrequencyKey          = "frequency_key"
     val SeasonalAdjustmentKey = "seasonal_adjustment_key"
     val SeriesMetadata        = "series_metadata"
+    val TransformationsKey    = "transformations_key"
 
-  val CreateUnitsKey = 
+
+  val CreateTransformationsKey = 
     s"""
-    |CREATE TABLE ${TableName.UnitsKey} (
+    |CREATE TABLE ${TableName.TransformationsKey} (
     |  unit        CHAR(3),
     |  description VARCHAR(128),
     |  PRIMARY KEY ( unit )  
     |)
     """.stripMargin
 
-  val PopulateUnitsKey =
+  val PopulateTransformationsKey =
     s"""
-    |INSERT INTO ${TableName.UnitsKey}
+    |INSERT INTO ${TableName.TransformationsKey}
     |VALUES
     |  ('lin','Levels'),
     |  ('chg','Change'),
@@ -68,7 +69,7 @@ object DoltSchema:
     "wesa"->"Weekly, Ending Saturday",
     "bwew"->"Biweekly, Ending Wednesday",
     "bwem"->"Biweekly, Ending Monday"
-  )
+  ).map{ case (k,v) => (k.toUpperCase, v) } // series seem to reference these values in upper case, despite lower case in docs
 
   val PopulateFrequencyKey =
     s"INSERT INTO ${TableName.FrequencyKey} VALUES " + FrequenciesToDescriptions.map { case (k,v) => s"('$k','$v')" }.mkString(", ")
@@ -92,13 +93,12 @@ object DoltSchema:
     |  series              VARCHAR(64),
     |  title               VARCHAR(256),
     |  frequency           VARCHAR(4),
-    |  units               CHAR(3),
+    |  units               VARCHAR(128),
     |  seasonal_adjustment VARCHAR(8),
     |  notes               TEXT,
     |  timestamp           TIMESTAMP,
     |  PRIMARY KEY (series),
     |  FOREIGN KEY (frequency) REFERENCES frequency_key(frequency),
-    |  FOREIGN KEY (units) REFERENCES units_key(unit),
     |  FOREIGN KEY (seasonal_adjustment) REFERENCES seasonal_adjustment_key(seasonal_adjustment)
     |)
     """.stripMargin
@@ -123,8 +123,8 @@ object DoltSchema:
         execution(ps)
       }
     }
-    //Console.printLine(s"Uncustomized query: ${queryTemplate}").flatMap( _ => doIt )
-    doIt
+    Console.printLine(s"Uncustomized query: ${queryTemplate}").flatMap( _ => doIt )
+    //doIt
 
   def executeCustomizedUpdate( conn : Connection, queryTemplate : String )( customization : PreparedStatement => Unit ) =
     executeCustomized( conn, queryTemplate, _.executeUpdate())(customization)
@@ -152,11 +152,6 @@ object DoltSchema:
   def executeUpdate(conn : Connection, query : String) =
     executeCustomizedUpdate(conn, query){ ps => () }
 
-  // def createObservationsTable(conn : Connection, frequency : String) =
-  //  executeUpdate(conn, s"CREATE TABLE observations_${frequency} (observation_date DATE)")
-
-  // def createObservartionsTables(conn : Connection) =
-  //  FrequenciesToDescriptions.keys.foldLeft( ZIO.attempt(0) ){case (prev, next) => prev *> createObservationsTable(conn, next)}
 
   def mbAbsBigInt(value : String) : Option[BigInt] = Try(BigInt(value).abs).toOption
 
@@ -187,7 +182,7 @@ object DoltSchema:
 
   def populateObservationsTable( conn : Connection, series : String, goodObservations : List[SeriesObservation]) =
     val sb = new StringBuilder(512) // XXX: hard-coded
-    sb.append("INSERT INTO ${series} VALUES ")
+    sb.append(s"INSERT INTO ${series} VALUES ")
     val insertionTuples = goodObservations.map( obs => s"('${obs.date}', ${obs.value})" ).mkString(", ")
     sb.append(insertionTuples)
     executeUpdate( conn, sb.toString )
@@ -209,7 +204,7 @@ object DoltSchema:
         ps.setString(1, metadata.id)
         ps.setString(2, metadata.title)
         ps.setString(3, metadata.frequency_short)
-        ps.setString(4, metadata.units_short)
+        ps.setString(4, metadata.units)
         ps.setString(5, metadata.seasonal_adjustment_short)
         ps.setString(6, metadata.notes)
       }
@@ -219,8 +214,8 @@ object DoltSchema:
 
   def createSchema(conn : Connection) : ZIO[Any,Throwable,Unit] =
     for {
-      _ <- executeUpdate(conn, CreateUnitsKey)
-      _ <- executeUpdate(conn, PopulateUnitsKey)
+      _ <- executeUpdate(conn, CreateTransformationsKey)
+      _ <- executeUpdate(conn, PopulateTransformationsKey)
       _ <- executeUpdate(conn, CreateFrequencyKey)
       _ <- executeUpdate(conn, PopulateFrequencyKey)
       _ <- executeUpdate(conn, CreateSeasonalAdjustmentKey)

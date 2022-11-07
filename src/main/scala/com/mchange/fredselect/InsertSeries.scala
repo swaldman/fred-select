@@ -12,6 +12,7 @@ object InsertSeries extends ZIOAppDefault:
       seriesName = args(2)
       _ <- Console.printLine(s"Inserting series '${seriesName}'")
       seriesMetadata     <- FredApi.seriesMetadataFetch( seriesName, apiKey )
+      _                  <- Console.printLine( seriesMetadata )
       seriesObservations <- FredApi.seriesObservationsFetch( seriesName, apiKey )
       _                  <- DoltSchema.insertSeries( args(0), "root", "", seriesMetadata, seriesObservations )
       _                  <- Console.printLine(s"Successfully inserted series ${seriesName}")
