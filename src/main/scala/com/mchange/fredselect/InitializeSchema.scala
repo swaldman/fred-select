@@ -8,7 +8,7 @@ object InitializeSchema extends ZIOAppDefault:
       args <- getArgs
       _ <- ZIO.cond(args.size == 1, (),new Exception("A JDBC URL must be provided."))
       _ <- Console.printLine("Initializing fred-select schema")
-      _ <- DoltSchema.createSchema( args(0), "root","")
+      _ <- DoltSchema.createSchemaTransaction( args(0), "root","")
       _ <- Console.printLine("Successfully initialized fred-select schema")
     }
     yield ()

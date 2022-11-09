@@ -152,7 +152,6 @@ object DoltSchema:
   def executeUpdate(conn : Connection, query : String) =
     executeCustomizedUpdate(conn, query){ ps => () }
 
-
   def mbAbsBigInt(value : String) : Option[BigInt] = Try(BigInt(value).abs).toOption
 
   def valueSqlType(goodObservations : List[SeriesObservation]) : String =
@@ -212,7 +211,7 @@ object DoltSchema:
 
   // def insertSeries( conn : Connection )
 
-  def createSchema(conn : Connection) : ZIO[Any,Throwable,Unit] =
+  def createSchemaLoose(conn : Connection) : ZIO[Any,Throwable,Unit] =
     for {
       _ <- executeUpdate(conn, CreateTransformationsKey)
       _ <- executeUpdate(conn, PopulateTransformationsKey)
@@ -222,25 +221,29 @@ object DoltSchema:
       _ <- executeUpdate(conn, CreateSeriesMetadata)
     }
     yield ()
+
+  def createSchemaTransaction( conn : Connection ) : ZIO[Any,Throwable,Unit] =
+    transact(conn)( createSchemaLoose )
   
-  def safeWithConnection[A]( jdbcUrl : String, user : String, password : String )( action : Connection => ZIO[Any,Throwable,A]) : ZIO[Any,Throwable,A] =
+  def withConnection[A]( jdbcUrl : String, user : String, password : String )( action : Connection => ZIO[Any,Throwable,A]) : ZIO[Any,Throwable,A] =
     def acquireConnection() = ZIO.attempt(DriverManager.getConnection(jdbcUrl,user,password))
     def releaseConnection( conn : Connection ) = ZIO.succeed( conn.close() )
     ZIO.acquireReleaseWith(acquireConnection())(releaseConnection)(action)
 
-  def createSchema( jdbcUrl : String, user : String, password : String ) : ZIO[Any,Throwable,Unit] =
-    safeWithConnection(jdbcUrl, user, password)(conn => createSchema(conn))
+  def createSchemaTransaction( jdbcUrl : String, user : String, password : String ) : ZIO[Any,Throwable,Unit] =
+    withConnection(jdbcUrl, user, password)( createSchemaTransaction )
 
-  def insertSeries( conn : Connection, seriesMetadata : SeriesMetadata, seriesObservations : SeriesObservations ) : ZIO[Any,Throwable,Unit] =
+  def insertSeriesTransaction( conn : Connection, seriesMetadata : SeriesMetadata, seriesObservations : SeriesObservations ) : ZIO[Any,Throwable,Unit] =
+    transact(conn)( conn => insertSeriesLoose(conn, seriesMetadata, seriesObservations))
+
+  def insertSeriesLoose( conn : Connection, seriesMetadata : SeriesMetadata, seriesObservations : SeriesObservations ) : ZIO[Any,Throwable,Unit] =
     val goodObservations = seriesObservations.observations.filter( _.value.trim != "." ) // null values seem to be represented as '.'
-    transact(conn) { conn =>
-      for {
-        _ <- insertSeriesMetadata(conn, seriesMetadata)
-        _ <- createObservationsTable(conn, seriesMetadata.id, valueSqlType(goodObservations))
-        _ <- populateObservationsTable(conn, seriesMetadata.id, goodObservations)
-      }
-      yield()
+    for {
+      _ <- insertSeriesMetadata(conn, seriesMetadata)
+      _ <- createObservationsTable(conn, seriesMetadata.id, valueSqlType(goodObservations))
+      _ <- populateObservationsTable(conn, seriesMetadata.id, goodObservations)
     }
+    yield()
 
-  def insertSeries( jdbcUrl : String, user : String, password : String, seriesMetadata : SeriesMetadata, seriesObservations : SeriesObservations ) : ZIO[Any,Throwable,Unit] =
-    safeWithConnection(jdbcUrl, user, password)(conn => insertSeries(conn, seriesMetadata, seriesObservations))
+  def insertSeriesTransaction( jdbcUrl : String, user : String, password : String, seriesMetadata : SeriesMetadata, seriesObservations : SeriesObservations ) : ZIO[Any,Throwable,Unit] =
+    withConnection(jdbcUrl, user, password)( conn => insertSeriesTransaction(conn, seriesMetadata, seriesObservations) )
