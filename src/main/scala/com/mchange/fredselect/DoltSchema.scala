@@ -18,6 +18,8 @@ object DoltSchema:
     val SeriesMetadata        = "series_metadata"
     val TransformationsKey    = "transformations_key"
 
+  val TaskTrue  : Task[Boolean] = ZIO.succeed(true)
+  val TaskFalse : Task[Boolean] = ZIO.succeed(false)
 
   val CreateTransformationsKey = 
     s"""
@@ -104,6 +106,8 @@ object DoltSchema:
     """.stripMargin
 
   val SeriesMetadataInsertion = s"INSERT INTO ${TableName.SeriesMetadata} VALUES (?, ?, ?, ?, ?, ?, NOW())"
+  val CountInSeriesMetadataQuery = s"SELECT COUNT(*) FROM ${TableName.SeriesMetadata} WHERE series = ?"
+
 
   def transact[A]( conn : Connection )( block : Connection => ZIO[Any,Throwable,A] ) : ZIO[Any, Throwable, A] =
     def revertAutoCommit(oldAutoCommit : Boolean) : ZIO[Any,Nothing,Unit] = 
@@ -123,8 +127,8 @@ object DoltSchema:
         execution(ps)
       }
     }
-    Console.printLine(s"Uncustomized query: ${queryTemplate}").flatMap( _ => doIt )
-    //doIt
+    //Console.printLine(s"Uncustomized query: ${queryTemplate}").flatMap( _ => doIt )
+    doIt
 
   def executeCustomizedUpdate( conn : Connection, queryTemplate : String )( customization : PreparedStatement => Unit ) =
     executeCustomized( conn, queryTemplate, _.executeUpdate())(customization)
@@ -247,3 +251,34 @@ object DoltSchema:
 
   def insertSeriesTransaction( jdbcUrl : String, user : String, password : String, seriesMetadata : SeriesMetadata, seriesObservations : SeriesObservations ) : ZIO[Any,Throwable,Unit] =
     withConnection(jdbcUrl, user, password)( conn => insertSeriesTransaction(conn, seriesMetadata, seriesObservations) )
+
+  def dropObservationsTable( conn : Connection, series : String ) = executeUpdate(conn, s"DROP TABLE ${series}")
+
+  def deleteSeriesMetadata( conn : Connection, series : String ) = executeCustomizedUpdate(conn, s"DELETE FROM ${TableName.SeriesMetadata} WHERE series = ?")(_.setString(1,series))
+
+  def dropSeriesLoose( conn : Connection, series : String ) =
+    for {
+      _ <- dropObservationsTable( conn, series )
+      _ <- deleteSeriesMetadata( conn, series )
+    } yield()
+
+  def dropSeriesIfPresentLoose( conn : Connection, series : String ) : Task[Boolean] =
+    val checkQuery = executeCustomizedSingleIntQuery(conn, CountInSeriesMetadataQuery)( _.setString(1, series) )
+    checkQuery.flatMap { numRows =>
+      assert( numRows == 0 || numRows == 1, s"There should be precisely zero or one rows in ${TableName.SeriesMetadata} for series '${series}'")
+      if numRows == 1 then dropSeriesLoose(conn, series).flatMap( _ => TaskTrue) else TaskFalse
+    }
+
+  def updateSeriesLoose( conn : Connection, seriesMetadata : SeriesMetadata, seriesObservations : SeriesObservations ) : Task[Boolean] =
+    for {
+      replaced <- dropSeriesIfPresentLoose(conn, seriesMetadata.id)
+      _        <- insertSeriesLoose(conn, seriesMetadata, seriesObservations)
+    }
+    yield replaced
+
+  def updateSeriesTransaction(conn : Connection, seriesMetadata : SeriesMetadata, seriesObservations : SeriesObservations) : Task[Boolean] =
+    transact(conn)(conn => updateSeriesLoose( conn, seriesMetadata, seriesObservations ))
+
+  def updateSeriesTransaction(jdbcUrl : String, user : String, password : String, seriesMetadata : SeriesMetadata, seriesObservations : SeriesObservations ) : Task[Boolean] =
+    withConnection(jdbcUrl,user,password)(conn => updateSeriesTransaction(conn, seriesMetadata, seriesObservations))
+
