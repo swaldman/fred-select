@@ -45,6 +45,7 @@ object FredSelect extends ZIOAppDefault:
 
   val Usage = 
     """|
-       |fredselect init <jdbc-url>
-       |           update <jdbc-url> <fred-api-key> <series>
+       |Usage:
+       |  fredselect init <jdbc-url>
+       |             update <jdbc-url> <fred-api-key> <series>
     """.stripMargin 
