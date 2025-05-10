@@ -6,7 +6,7 @@ import scala.util.{Try,Using}
 import scala.util.control.NonFatal
 import zio.*
 
-import com.mchange.sc3.sqlutil
+import com.mchange.sc.sqlutil
 
 import FredApi.*
 
@@ -139,7 +139,7 @@ object DoltSchema:
     }
     val execution : PreparedStatement => Option[Int] = { ps =>
       val rs = ps.executeQuery()
-      sqlutil.getMaybeSingleValue(extractor)(rs)
+      sqlutil.zeroOrOneResult("customized-maybe-single-int-query", rs)(extractor)
     }
     executeCustomized( conn, queryTemplate, execution )( customization )
 
@@ -149,7 +149,7 @@ object DoltSchema:
     }
     val execution : PreparedStatement => Int = { ps =>
       val rs = ps.executeQuery()
-      sqlutil.getSingleValue(extractor)(rs)
+      sqlutil.uniqueResult("customised-single-int-query",rs)(extractor)
     }
     executeCustomized( conn, queryTemplate, execution )( customization )
 
